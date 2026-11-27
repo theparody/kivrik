@@ -1,10 +1,12 @@
 package com.kivrik.game
 
+import android.content.Context
 import android.media.AudioAttributes
-import android.media.AudioFormat
-import android.media.AudioTrack
-import android.os.Handler
-import android.os.Looper
+import android.media.SoundPool
+import java.io.File
+import java.io.FileOutputStream
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import kotlin.math.PI
 import kotlin.math.max
 import kotlin.math.min
@@ -12,8 +14,9 @@ import kotlin.math.pow
 import kotlin.math.sin
 
 /**
- * Çizgi film ses efektleri. WebAudio osilatörlerinin birebir karşılığı:
- * her efekt başlangıçta PCM olarak sentezlenir, AudioTrack ile çalınır. Harici ses dosyası yok.
+ * Çizgi film ses efektleri. Efektler açılışta arka planda PCM olarak sentezlenir, küçük WAV
+ * dosyalarına yazılır ve SoundPool'a yüklenir. Çalma anında hiçbir kurulum yapılmadığı için
+ * oyun akışını (ana iş parçacığı) bloklamaz. Harici ses dosyası yok.
  */
 object Sfx {
     private const val RATE = 22050
@@ -25,9 +28,21 @@ object Sfx {
         val type: Char, val vol: Float, val delay: Float
     )
 
-    private val handler = Handler(Looper.getMainLooper())
-    private var active = 0
-    private val bank = HashMap<String, ShortArray>()
+    private var pool: SoundPool? = null
+    private val ids = HashMap<String, Int>()
+    private var started = false
+
+    // Ses ve titreşim sistem servislerine IPC çağrısı yapar; bazı cihazlarda onlarca ms sürebilir.
+    // Bu yüzden hepsi bu arka plan iş parçacığında çalışır, oyun karesini asla bekletmez.
+    private val fxThread = android.os.HandlerThread("kivrik-fx").apply { start() }
+    private val fx = android.os.Handler(fxThread.looper)
+
+    /** Verilen işi (titreşim vb.) arka plan iş parçacığında çalıştırır. */
+    fun async(block: () -> Unit) {
+        fx.post {
+            try { block() } catch (_: Exception) {}
+        }
+    }
 
     private fun render(vararg tones: Tone): ShortArray {
         var total = 0f
@@ -65,8 +80,8 @@ object Sfx {
         return out
     }
 
-    private fun build() {
-        if (bank.isNotEmpty()) return
+    private fun buildBank(): Map<String, ShortArray> {
+        val bank = LinkedHashMap<String, ShortArray>()
         bank["eat"] = render(Tone(340f, 620f, 0.08f, 't', 0.14f, 0f), Tone(520f, 880f, 0.09f, 's', 0.11f, 0.055f))
         bank["eatGold"] = render(
             Tone(340f, 620f, 0.08f, 't', 0.14f, 0f), Tone(520f, 880f, 0.09f, 's', 0.11f, 0.055f),
@@ -85,44 +100,55 @@ object Sfx {
         bank["nope"] = render(Tone(210f, 140f, 0.12f, 'q', 0.07f, 0f))
         val notes = floatArrayOf(523f, 659f, 784f, 1046f)
         bank["rain"] = render(*Array(4) { i -> Tone(notes[i], notes[i] * 1.1f, 0.1f, 's', 0.09f, i * 0.05f) })
+        return bank
     }
 
-    /** Uygulama açılırken bir kez çağrılır (sentez ~ birkaç ms). */
-    fun init() = build()
+    private fun writeWav(f: File, data: ShortArray) {
+        val bytes = data.size * 2
+        val buf = ByteBuffer.allocate(44 + bytes).order(ByteOrder.LITTLE_ENDIAN)
+        buf.put("RIFF".toByteArray()); buf.putInt(36 + bytes); buf.put("WAVE".toByteArray())
+        buf.put("fmt ".toByteArray()); buf.putInt(16); buf.putShort(1); buf.putShort(1)
+        buf.putInt(RATE); buf.putInt(RATE * 2); buf.putShort(2); buf.putShort(16)
+        buf.put("data".toByteArray()); buf.putInt(bytes)
+        for (s in data) buf.putShort(s)
+        FileOutputStream(f).use { it.write(buf.array()) }
+    }
+
+    /** Uygulama açılırken bir kez çağrılır. Sentez ve yükleme arka planda yapılır. */
+    fun init(ctx: Context) {
+        if (started) return
+        started = true
+        val appCtx = ctx.applicationContext
+        val sp = SoundPool.Builder()
+            .setMaxStreams(8)
+            .setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_GAME)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                    .build()
+            )
+            .build()
+        pool = sp
+        Thread {
+            try {
+                val dir = File(appCtx.cacheDir, "sfx")
+                dir.mkdirs()
+                for ((key, data) in buildBank()) {
+                    val f = File(dir, "$key.wav")
+                    writeWav(f, data)
+                    val id = sp.load(f.absolutePath, 1)
+                    synchronized(ids) { ids[key] = id }
+                }
+            } catch (_: Exception) {
+            }
+        }.start()
+    }
 
     private fun play(key: String) {
         if (!enabled) return
-        val data = bank[key] ?: return
-        if (active >= 10) return
-        try {
-            val bytes = data.size * 2
-            val track = AudioTrack.Builder()
-                .setAudioAttributes(
-                    AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_GAME)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                        .build()
-                )
-                .setAudioFormat(
-                    AudioFormat.Builder()
-                        .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-                        .setSampleRate(RATE)
-                        .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
-                        .build()
-                )
-                .setBufferSizeInBytes(bytes)
-                .setTransferMode(AudioTrack.MODE_STATIC)
-                .build()
-            track.write(data, 0, data.size)
-            active++
-            track.play()
-            val ms = (data.size * 1000L / RATE) + 120L
-            handler.postDelayed({
-                try { track.release() } catch (_: Exception) {}
-                active--
-            }, ms)
-        } catch (_: Exception) {
-        }
+        val id = synchronized(ids) { ids[key] } ?: return
+        val p = pool ?: return
+        fx.post { p.play(id, 1f, 1f, 1, 0, 1f) }
     }
 
     fun eat(golden: Boolean = false) = play(if (golden) "eatGold" else "eat")

@@ -42,6 +42,9 @@ object SvgPath {
         var cy = 0f
         var sx = 0f
         var sy = 0f
+        var lcx = 0f // son kübik bezier kontrol noktası (S/s için yansıtılır)
+        var lcy = 0f
+        var ctl = false
 
         fun skipSep() {
             while (i < n && (d[i] == ' ' || d[i] == ',' || d[i] == '\n' || d[i] == '\t' || d[i] == '\r')) i++
@@ -78,6 +81,8 @@ object SvgPath {
             } else if (cmd == ' ') {
                 break
             }
+            val wasCubic = ctl
+            ctl = false
             when (cmd) {
                 'M', 'm' -> {
                     var x = num(); var y = num()
@@ -104,6 +109,15 @@ object SvgPath {
                     var x1 = num(); var y1 = num(); var x2 = num(); var y2 = num(); var x = num(); var y = num()
                     if (cmd == 'c') { x1 += cx; y1 += cy; x2 += cx; y2 += cy; x += cx; y += cy }
                     p.cubicTo(x1, y1, x2, y2, x, y); cx = x; cy = y
+                    lcx = x2; lcy = y2; ctl = true
+                }
+                'S', 's' -> {
+                    var x2 = num(); var y2 = num(); var x = num(); var y = num()
+                    if (cmd == 's') { x2 += cx; y2 += cy; x += cx; y += cy }
+                    val x1 = if (wasCubic) 2f * cx - lcx else cx
+                    val y1 = if (wasCubic) 2f * cy - lcy else cy
+                    p.cubicTo(x1, y1, x2, y2, x, y); cx = x; cy = y
+                    lcx = x2; lcy = y2; ctl = true
                 }
                 'Q', 'q' -> {
                     var x1 = num(); var y1 = num(); var x = num(); var y = num()
@@ -254,7 +268,6 @@ object Glyphs {
         "goldRush" to IconDef("star", "#facc15", "×2"),
         "consolation" to IconDef("gift", "#f9a8d4"),
         "globalBoost" to IconDef("sprout", "#4ade80", "↑"),
-        "autopilot" to IconDef("robot", "#a5b4fc"),
         "lightning" to IconDef("bolt", "#fde047"),
         "chainLightning" to IconDef("bolt", "#7dd3fc", "×3"),
         "lightningBounty" to IconDef("bolt", "#facc15", "\$"),
@@ -288,7 +301,17 @@ object Glyphs {
     private val EMOJI_RE = Regex("(" + EMOJI.keys.joinToString("|") { Regex.escape(it) } + ")")
 
     /** Metni [(parça, emojiAnahtarı?)] listesine böler. */
+    private val richCache = HashMap<String, List<Pair<String, String?>>>()
+
     fun splitRich(text: String): List<Pair<String, String?>> {
+        richCache[text]?.let { return it }
+        val res = splitRichUncached(text)
+        if (richCache.size > 400) richCache.clear()
+        richCache[text] = res
+        return res
+    }
+
+    private fun splitRichUncached(text: String): List<Pair<String, String?>> {
         val clean = text.replace("️", "")
         val out = ArrayList<Pair<String, String?>>()
         var last = 0

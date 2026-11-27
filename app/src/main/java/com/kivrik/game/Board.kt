@@ -150,9 +150,10 @@ class Board(private val ink: Ink, private val density: Float) {
             val w = ink.richWidth(ft.text, ft.size)
             val x = ft.x * cell
             val y = ft.y * cell
-            c.saveLayerAlpha(x - w / 2 - 12, y - ft.size - 6, x + w / 2 + 12, y + ft.size + 6, (al * 255).toInt())
+            val layered = al < 0.97f
+            if (layered) c.saveLayerAlpha(x - w / 2 - 12, y - ft.size - 6, x + w / 2 + 12, y + ft.size + 6, (al * 255).toInt())
             ink.rich(c, ft.text, x, y, ft.size, ft.color, 5f)
-            c.restore()
+            if (layered) c.restore()
         }
 
         if (g.mode == Mode.BONKED) {

@@ -44,8 +44,8 @@ object Tree {
             "Çite çarpınca ölmez, otomatik güvenli yöne dönersin! Tur başına tek hakkın vardır (Hazırlık Çantası ile artar)."),
         sk("shockCushion", "Yastık Şoku", BR_A, "🔔", "wallCushion", listOf(150, 400, 1000),
             "Duvar Yastığı çalışınca sahadaki tüm elmalara 2 / 4 / 6 hasar verir."),
-        sk("startKit", "Hazırlık Çantası", BR_A, "🎒", "shockCushion", listOf(300, 900, 2500, 6000, 14000),
-            "Yastık, portal geçiş ve hayalet kuyruğun tur başına hak sayısı: 1 / 2 / 3 / 4 / 5. Her biri kendi hakkını harcar. Anka Kuşu ayrıdır."),
+        sk("startKit", "Hazırlık Çantası", BR_A, "🎒", "shockCushion", listOf(300, 900, 2500),
+            "Yastık, portal geçiş ve hayalet kuyruğun tur başına hak sayısı: 1 / 2 / 3. Her biri kendi hakkını harcar. Anka Kuşu ayrıdır."),
         sk("wallWrap", "Duvardan Geçiş", BR_A, "🌀", "wallCushion", listOf(40),
             "Ahşap çitlerden portal gibi geçip karşı taraftan çıkarsın! Tur başına tek hakkın vardır (Hazırlık Çantası ile artar)."),
         sk("portalLoot", "Portal Ganimeti", BR_A, "💰", "wallWrap", listOf(250, 700, 1800),
@@ -108,8 +108,6 @@ object Tree {
             "Çarpıp turu bitirince o turdaki kazancının %12 / %24 / %36'sı kadar ekstra elma alırsın."),
         sk("globalBoost", "Usta Bahçıvan", BR_C, "🧑‍🌾", "consolation", listOf(1500, 4000, 9000, 20000, 42000),
             "Tüm elma kazançların seviye başına %15 artar."),
-        sk("autopilot", "Otopilot", BR_C, "🤖", "globalBoost", listOf(40000, 120000, 300000),
-            "Oyunun son yeteneği! Sen yön vermezken yılan en yakın elmaya kendi gider (4 kare / 8 kare / her yerden). Tuşa basınca yönetim yine sende."),
 
         // ===== D: FIRTINA (YILDIRIM) =====
         sk("lightning", "Yıldırım", BR_D, "⚡", "down", listOf(60, 160, 400, 900, 2000),

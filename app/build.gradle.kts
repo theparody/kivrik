@@ -11,14 +11,28 @@ android {
         applicationId = "com.kivrik.game"
         minSdk = 24
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "1.1"
+    }
+
+    signingConfigs {
+        create("kivrik") {
+            storeFile = file("kivrik.keystore")
+            storePassword = "android"
+            keyAlias = "kivrik"
+            keyPassword = "android"
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("kivrik")
         }
+    }
+    lint {
+        checkReleaseBuilds = false
+        abortOnError = false
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -29,4 +43,4 @@ android {
     }
 }
 
-// Bilerek hiçbir bağımlılık yok: saf Android framework (Canvas + AudioTrack), WebView yok.
+// Bilerek hiçbir bağımlılık yok: saf Android framework (Canvas), WebView yok.

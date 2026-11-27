@@ -473,34 +473,6 @@ class Game(val st: GameState, private val host: Host) {
         Sfx.zap()
     }
 
-    private fun autopilotDir(head: Pt): Dir? {
-        val l = lvl("autopilot")
-        if (l == 0 || apples.isEmpty()) return null
-        val range = intArrayOf(0, 4, 8, 999)[l]
-        var best: Apple? = null
-        var bd = 1e9
-        for (a in apples) {
-            val d = (abs(a.x - head.x) + abs(a.y - head.y)).toDouble()
-            if (d < bd) { bd = d; best = a }
-        }
-        val b = best ?: return null
-        if (bd > range) return null
-        val opts = listOf(Dir(1, 0), Dir(-1, 0), Dir(0, 1), Dir(0, -1))
-            .filter { isDirUnlocked(it.x, it.y) && !(it.x == -dir.x && it.y == -dir.y) }
-        var pick: Dir? = null
-        var ps = 1e9
-        for (o in opts) {
-            val nx = head.x + o.x
-            val ny = head.y + o.y
-            if (isCellDangerous(nx, ny) != null) continue
-            val d = abs(b.x - nx) + abs(b.y - ny) + (if (o.x == dir.x && o.y == dir.y) -0.1 else 0.0)
-            if (d < ps) { ps = d; pick = o }
-        }
-        val p = pick
-        if (p != null && (p.x != dir.x || p.y != dir.y)) return p
-        return null
-    }
-
     // ---- ana adım ----
     private fun gameTick() {
         if (mode != Mode.PLAYING) return
@@ -524,9 +496,6 @@ class Game(val st: GameState, private val host: Host) {
                     Sfx.turn()
                 }
             }
-        } else if (lvl("autopilot") > 0 && tickCount - lastManualTick > 10) {
-            val ap = autopilotDir(snake[0])
-            if (ap != null) dir = ap
         }
 
         val head = snake[0]

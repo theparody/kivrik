@@ -29,6 +29,9 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sin
 
+/** Ekranın altında küçük görünür; telefondaki APK'nın hangi sürüm olduğunu anlamak için. */
+const val BUILD_TAG = "sürüm 4 • native"
+
 /**
  * Tüm arayüzü (HUD, tahta, yön tuşları, yetenek ağacı, onay penceresi) tek bir özel View içinde
  * Canvas ile çizen native ekran. WebView / HTML yok. Tuval density ile ölçeklenir; ölçüler dp'dir.
@@ -113,15 +116,27 @@ class GameView(context: Context) : View(context), Game.Host {
 
     private val hasVib = vib?.hasVibrator() == true
 
+    // Kayıt (SharedPreferences) en fazla 2,5 sn'de bir yazılır; her elmada diske gitmeyiz.
+    private var saveDirty = false
+    private var lastSave = 0L
+
+    private fun flushSave() {
+        Store.save(context, st)
+        saveDirty = false
+        lastSave = SystemClock.uptimeMillis()
+    }
+
     private var running = false
     private var lastFrame = 0L
     private val frameCb = object : Choreographer.FrameCallback {
         override fun doFrame(frameTimeNanos: Long) {
             if (!running) return
             val now = SystemClock.uptimeMillis()
-            val dt = if (lastFrame == 0L) 0f else min(0.1f, (now - lastFrame) / 1000f)
-            lastFrame = now
+            // Süre, ekranın gerçek kare zamanından hesaplanır (120 Hz'de bile pürüzsüz adım)
+            val dt = if (lastFrame == 0L) 0f else min(0.1f, (frameTimeNanos - lastFrame) / 1_000_000_000f)
+            lastFrame = frameTimeNanos
             game.update(dt, now)
+            if (saveDirty && now - lastSave > 2500) flushSave()
             invalidate()
             Choreographer.getInstance().postFrameCallback(this)
         }
@@ -131,7 +146,7 @@ class GameView(context: Context) : View(context), Game.Host {
     // başlatma
     // ============================================================================================
     init {
-        Sfx.init()
+        Sfx.init(context)
         Sfx.enabled = st.soundEnabled
         game.startRun()
         isFocusable = true
@@ -167,7 +182,10 @@ class GameView(context: Context) : View(context), Game.Host {
     // ============================================================================================
     // Game.Host
     // ============================================================================================
-    override fun save() = Store.save(context, st)
+    override fun save() {
+        saveDirty = true
+        if (SystemClock.uptimeMillis() - lastSave > 2500) flushSave()
+    }
 
     override fun toast(msg: String) {
         toastText = msg
@@ -204,18 +222,18 @@ class GameView(context: Context) : View(context), Game.Host {
 
     private fun haptic(ms: Long) {
         if (!st.hapticsEnabled || !hasVib) return
-        try {
+        Sfx.async {
             if (Build.VERSION.SDK_INT >= 26) vib?.vibrate(VibrationEffect.createOneShot(ms, VibrationEffect.DEFAULT_AMPLITUDE))
             else @Suppress("DEPRECATION") vib?.vibrate(ms)
-        } catch (_: Exception) {}
+        }
     }
 
     private fun hapticNope() {
         if (!st.hapticsEnabled || !hasVib) return
-        try {
+        Sfx.async {
             if (Build.VERSION.SDK_INT >= 26) vib?.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 8, 40, 8), -1))
             else @Suppress("DEPRECATION") vib?.vibrate(longArrayOf(0, 8, 40, 8), -1)
-        } catch (_: Exception) {}
+        }
     }
 
     private val layoutCache = HashMap<String, StaticLayout>()
@@ -403,6 +421,7 @@ class GameView(context: Context) : View(context), Game.Host {
         drawStage(c, t)
         drawControls(c, t)
         drawDpad(c, t)
+        ink.text(c, BUILD_TAG, W / 2f, H - 8f, 10f, Pal.a(Pal.INK, 0.45f))
 
         if (game.mode == Mode.TREE) drawTreeOverlay(c, t)
         if (confirmOpen) drawModal(c)
@@ -446,6 +465,9 @@ class GameView(context: Context) : View(context), Game.Host {
         Glyphs.drawEmoji(c, key, r.cx - 12f, r.cy - 12f + dy, 24f)
     }
 
+    private val logoTail: Path by lazy { SvgPath.parse("M20 29v6M20 35l-3 3M20 35l3 3") }
+    private val logoSmile: Path by lazy { SvgPath.parse("M13 27q7 4.5 14 0") }
+
     private fun drawHeader(c: Canvas) {
         // logo
         ink.comicBox(c, logo.l, logo.t, logo.r, logo.b, 16f, Pal.c("#4ade80"), 3.5f, 4f)
@@ -453,7 +475,7 @@ class GameView(context: Context) : View(context), Game.Host {
         val side = 40f - 7f - 2f
         c.translate(logo.l + 3.5f + 1f, logo.t + 3.5f + 1f)
         c.scale(side / 40f, side / 40f)
-        c.drawPath(SvgPath.parse("M20 29v6M20 35l-3 3M20 35l3 3"), ink.stroke(Pal.c("#ef4444"), 2.4f, true))
+        c.drawPath(logoTail, ink.stroke(Pal.c("#ef4444"), 2.4f, true))
         c.drawCircle(13f, 17f, 6.6f, ink.fill(Pal.c("#ffffff")))
         c.drawCircle(13f, 17f, 6.6f, ink.stroke(Pal.INK, 2.6f))
         c.drawCircle(27f, 17f, 6.6f, ink.fill(Pal.c("#ffffff")))
@@ -462,7 +484,7 @@ class GameView(context: Context) : View(context), Game.Host {
         c.drawCircle(25.6f, 18.4f, 2.8f, ink.fill(Pal.INK))
         c.drawCircle(15.2f, 17.4f, 0.9f, ink.fill(Pal.c("#ffffff")))
         c.drawCircle(26.4f, 17.4f, 0.9f, ink.fill(Pal.c("#ffffff")))
-        c.drawPath(SvgPath.parse("M13 27q7 4.5 14 0"), ink.stroke(Pal.INK, 2.4f, true))
+        c.drawPath(logoSmile, ink.stroke(Pal.INK, 2.4f, true))
         c.restore()
 
         // başlık
@@ -512,18 +534,22 @@ class GameView(context: Context) : View(context), Game.Host {
             var cw = 18f
             for (ch in chips) cw += 14f + 1f + ink.measure(fmt(ch.second), 12f) + 8f
             val avail = W - m - x
+            // Dört çip birden sığmazsa içeriği orantılı küçült (kırpma yok)
+            val sc = if (cw > avail) avail / cw else 1f
             if (cw > avail) cw = avail
             ink.comicBox(c, x, y, x + cw, y + 30f, 15f, Pal.c("#dbeafe"), 3f, 4f)
             c.save()
             c.clipRect(x + 3f, y, x + cw - 3f, y + 34f)
+            c.translate(x, y + 15f); c.scale(sc, sc); c.translate(-x, -(y + 15f))
             var cx = x + 9f
             for (ch in chips) {
                 val a = if (ch.third) 1f else 0.4f
                 val tw = ink.measure(fmt(ch.second), 12f)
-                c.saveLayerAlpha(cx - 2f, y, cx + 14f + 1f + tw + 4f, y + 30f, (a * 255).toInt())
+                val layered = a < 1f // yalnızca soluk (0 hak) çiplerde ara katman kullan
+                if (layered) c.saveLayerAlpha(cx - 2f, y, cx + 14f + 1f + tw + 4f, y + 30f, (a * 255).toInt())
                 Glyphs.drawEmoji(c, ch.first, cx, y + 15f - 7f, 14f)
                 ink.text(c, fmt(ch.second), cx + 15f, y + 15f, 12f, Pal.INK, Paint.Align.LEFT)
-                c.restore()
+                if (layered) c.restore()
                 cx += 14f + 1f + tw + 8f
             }
             c.restore()
