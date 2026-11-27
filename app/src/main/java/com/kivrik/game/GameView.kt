@@ -46,7 +46,7 @@ class GameView(context: Context) : View(context), Game.Host {
     }
 
     private var st: GameState = Store.load(context)
-    private var game: Game
+    private var game: Game = Game(st, this)
     private val ink = Ink()
     private val dens = resources.displayMetrics.density
     private val board = Board(ink, dens)
@@ -133,7 +133,6 @@ class GameView(context: Context) : View(context), Game.Host {
     init {
         Sfx.init()
         Sfx.enabled = st.soundEnabled
-        game = Game(st, this)
         game.startRun()
         isFocusable = true
     }
